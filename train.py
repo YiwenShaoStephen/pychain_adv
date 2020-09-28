@@ -69,7 +69,8 @@ parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='path to latest checkpoint (default: none)')
 # Architecture
 parser.add_argument('--arch', '-a', metavar='ARCH', default='TDNN',
-                    choices=['TDNN', 'RNN', 'LSTM', 'GRU', 'TDNN-LSTM'],
+                    choices=['TDNN', 'RNN', 'LSTM',
+                             'GRU', 'TDNN-LSTM', 'TDNN-MFCC'],
                     help='model architecture: ')
 parser.add_argument('--layers', default=5, type=int, help='number of layers')
 parser.add_argument('--feat-dim', default=40, type=int,
@@ -86,9 +87,16 @@ parser.add_argument('--strides', default=[1, 1, 1, 1, 3], type=int, nargs='+',
                     help='strides for TDNN/CNN kernels (only required for TDNN)')
 parser.add_argument('--bidirectional', default=False, type=bool,
                     help='bidirectional rnn')
+# Feature Extraction
+parser.add_argument('--on-the-fly', default=False, type=bool,
+                    help='on the fly feature extraction')
+parser.add_argument('--normalize', default=False, type=bool,
+                    help='normalization on utterance level')
 # Miscs
 parser.add_argument('--seed', type=int, default=0, help='manual seed')
-
+# smoothing
+parser.add_argument('--sigma', type=float, default=0,
+                    help='random smoothing')
 args = parser.parse_args()
 print(args)
 
@@ -111,12 +119,16 @@ def main():
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
 
     # Data
-    trainset = ChainDataset(args.train)
+    trainset = ChainDataset(
+        args.train, on_the_fly=args.on_the_fly, feat='raw', normalize=args.normalize)
     trainsampler = BucketSampler(trainset, args.train_bsz)
-    trainloader = AudioDataLoader(trainset, batch_sampler=trainsampler)
+    trainloader = AudioDataLoader(
+        trainset, batch_sampler=trainsampler, num_workers=4)
 
-    validset = ChainDataset(args.valid)
-    validloader = AudioDataLoader(validset, batch_size=args.valid_bsz)
+    validset = ChainDataset(
+        args.valid, on_the_fly=args.on_the_fly, feat='raw', normalize=args.normalize)
+    validloader = AudioDataLoader(
+        validset, batch_size=args.valid_bsz, num_workers=4)
 
     # Model
     print("==> creating model '{}'".format(args.arch))
@@ -135,7 +147,8 @@ def main():
 
     # loss
     den_fst = simplefst.StdVectorFst.read(args.den_fst)
-    den_graph = ChainGraph(den_fst, leaky_mode='transition')
+    # den_graph = ChainGraph(den_fst, leaky_mode='transition')
+    den_graph = ChainGraph(den_fst)
     criterion = ChainLoss(den_graph)
 
     # optimizer
@@ -209,12 +222,14 @@ def train(trainloader, model, criterion, optimizer, writer, epoch, use_cuda):
 
     lr = optimizer.param_groups[0]['lr']
     writer.add_scalar('lr', lr, epoch)
-    for batch_idx, (inputs, input_lengths, graphs) in enumerate(trainloader):
+    for batch_idx, (inputs, input_lengths, utt_ids, graphs) in enumerate(trainloader):
         # measure data loading time
         data_time.update(time.time() - end)
 
         if use_cuda:
             inputs = inputs.cuda()
+
+        inputs = inputs + args.sigma * torch.randn_like(inputs)
 
         # compute output
         outputs, output_lengths = model(inputs, input_lengths)
@@ -254,7 +269,7 @@ def test(testloader, model, criterion, writer, epoch, use_cuda):
     model.eval()
 
     end = time.time()
-    for batch_idx, (inputs, input_lengths, graphs) in enumerate(testloader):
+    for batch_idx, (inputs, input_lengths, utt_ids, graphs) in enumerate(testloader):
         # measure data loading time
         data_time.update(time.time() - end)
 

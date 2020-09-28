@@ -9,6 +9,7 @@ export PATH=$PWD/utils/:$KALDI_ROOT/tools/openfst/bin:$KALDI_ROOT/tools/sctk/bin
 export LC_ALL=C
 # END
 
+#export PATH=~/miniconda3/bin:$PATH
 export PATH=$MAIN_ROOT:$MAIN_ROOT/tools:$PATH
 export LD_LIBRARY_PATH=$MAIN_ROOT/tools/pychain/openfst/lib:$LD_LIBRARY_PATH
 export PYTHONPATH=$MAIN_ROOT:$MAIN_ROOT/tools:$MAIN_ROOT/tools/pychain:$PYTHONPATH

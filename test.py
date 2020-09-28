@@ -28,6 +28,9 @@ parser.add_argument('--results', default='posteriors.ark', type=str,
                     help='results filename')
 parser.add_argument('--bsz', default=128, type=int,
                     help='test batchsize')
+# Feature Extraction
+parser.add_argument('--on-the-fly', default=False, type=bool,
+                    help='on the fly feature extraction')
 
 args = parser.parse_args()
 # state = {k: v for k, v in args._get_kwargs()}
@@ -38,7 +41,7 @@ use_cuda = torch.cuda.is_available()
 
 def main():
     # Data
-    testset = ChainDataset(args.test, train=False)
+    testset = ChainDataset(args.test, train=False, on_the_fly=args.on_the_fly)
     testloader = AudioDataLoader(testset, batch_size=args.bsz)
 
     # Model

@@ -5,6 +5,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchaudio
 
 
 class tdnn_bn_relu(nn.Module):
@@ -58,6 +59,48 @@ class TDNN(nn.Module):
         assert len(x.size()) == 3  # x is of size (B, T, D)
         # turn x to (B, D, T) for tdnn/cnn input
         x = x.transpose(1, 2).contiguous()
+        for i in range(len(self.tdnn)):
+            # apply Tdnn
+            x, x_lengths = self.tdnn[i](x, x_lengths)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+        x = x.transpose(2, 1).contiguous()  # turn it back to (B, T, D)
+        x = self.final_layer(x)
+        return x, x_lengths
+
+
+class TDNN_MFCC(nn.Module):
+    def __init__(self, in_dim, out_dim, num_layers, hidden_dims, kernel_sizes, strides, dilations, dropout=0):
+        super(TDNN_MFCC, self).__init__()
+        assert len(hidden_dims) == num_layers
+        assert len(kernel_sizes) == num_layers
+        assert len(strides) == num_layers
+        assert len(dilations) == num_layers
+        self.dropout = dropout
+        self.num_layers = num_layers
+        self.tdnn = nn.ModuleList([
+            tdnn_bn_relu(
+                in_dim if layer == 0 else hidden_dims[layer - 1],
+                hidden_dims[layer], kernel_sizes[layer],
+                strides[layer], dilations[layer],
+            )
+            for layer in range(num_layers)
+        ])
+        self.mfcc = torchaudio.transforms.MFCC()
+        self.final_layer = nn.Linear(hidden_dims[-1], out_dim, True)
+
+    def mfcc_output_lengths(self, in_lengths):
+        hop_length = self.mfcc.MelSpectrogram.hop_length
+        out_lengths = in_lengths // hop_length + 1
+        return out_lengths
+
+    def forward(self, x, x_lengths):
+        assert len(x.size()) == 3  # x is of size (B, T, D)
+        # turn x to (B, D, T) for tdnn/cnn input
+        x = x.transpose(1, 2).contiguous()
+        x = self.mfcc(x)
+        x = x.squeeze(1)
+        # x = x.detach()
+        x_lengths = self.mfcc_output_lengths(x_lengths)
         for i in range(len(self.tdnn)):
             # apply Tdnn
             x, x_lengths = self.tdnn[i](x, x_lengths)
